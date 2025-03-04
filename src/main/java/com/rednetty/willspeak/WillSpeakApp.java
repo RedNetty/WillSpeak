@@ -124,7 +124,7 @@ public class WillSpeakApp extends Application {
         BorderPane content = new BorderPane();
         content.setPadding(new Insets(15));
 
-        // Controls pane
+        // Controls pane (Left Side)
         VBox controlsPane = new VBox(10);
         controlsPane.setPadding(new Insets(0, 0, 0, 0));
         controlsPane.setMinWidth(200);
@@ -139,7 +139,7 @@ public class WillSpeakApp extends Application {
         ComboBox<UserProfile> userProfileCombo = new ComboBox<>();
         userProfileCombo.setPromptText("Select User Profile");
         userProfileCombo.setItems(trainingController.getProfiles());
-        userProfileCombo.setPrefWidth(Double.MAX_VALUE);
+        userProfileCombo.setMaxWidth(Double.MAX_VALUE);
         userProfileCombo.setConverter(new StringConverter<UserProfile>() {
             @Override
             public String toString(UserProfile profile) {
@@ -192,7 +192,7 @@ public class WillSpeakApp extends Application {
                 stopRealTimeButton
         );
 
-        // Transcription display area
+        // Transcription display area (Center)
         VBox transcriptionPane = new VBox(10);
         transcriptionPane.setPadding(new Insets(0, 0, 0, 15));
 
@@ -202,8 +202,8 @@ public class WillSpeakApp extends Application {
         transcriptionArea = new TextArea();
         transcriptionArea.setEditable(false);
         transcriptionArea.setWrapText(true);
-        transcriptionArea.setPrefHeight(300);
         transcriptionArea.textProperty().bind(mainController.transcriptionTextProperty());
+        VBox.setVgrow(transcriptionArea, Priority.ALWAYS); // Allow vertical growth
 
         transcriptionPane.getChildren().addAll(transcriptionLabel, transcriptionArea);
 
@@ -226,25 +226,17 @@ public class WillSpeakApp extends Application {
         });
 
         enhanceButton.setOnAction(e -> {
-            // Get selected user profile
             UserProfile selectedProfile = userProfileCombo.getValue();
             String userId = selectedProfile != null ? selectedProfile.getId() : null;
-
-            // Process with selected profile
             mainController.processRecordedAudio(userId);
             playButton.setDisable(false);
         });
 
-        playButton.setOnAction(e -> {
-            mainController.playProcessedAudio();
-        });
+        playButton.setOnAction(e -> mainController.playProcessedAudio());
 
         startRealTimeButton.setOnAction(e -> {
-            // Get selected user profile
             UserProfile selectedProfile = userProfileCombo.getValue();
             String userId = selectedProfile != null ? selectedProfile.getId() : null;
-
-            // Start real-time processing with selected profile
             mainController.startRealTimeProcessing(userId);
             recordButton.setDisable(true);
             stopButton.setDisable(true);
@@ -287,6 +279,7 @@ public class WillSpeakApp extends Application {
         BorderPane content = new BorderPane();
         content.setPadding(new Insets(15));
 
+        // Controls pane (Left Side)
         VBox controlsPane = new VBox(15);
         controlsPane.setPadding(new Insets(10));
 
@@ -297,11 +290,10 @@ public class WillSpeakApp extends Application {
         Label profileLabel = new Label("User Profile");
         profileLabel.setStyle("-fx-font-weight: bold; -fx-font-size: 14px;");
 
-        // Profile selection
         profileComboBox = new ComboBox<>();
         profileComboBox.setPromptText("Select User Profile");
         profileComboBox.setItems(trainingController.getProfiles());
-        profileComboBox.setPrefWidth(250);
+        profileComboBox.setMaxWidth(Double.MAX_VALUE);
         profileComboBox.setConverter(new StringConverter<UserProfile>() {
             @Override
             public String toString(UserProfile profile) {
@@ -314,8 +306,8 @@ public class WillSpeakApp extends Application {
             }
         });
 
-        // New profile button
         Button newProfileButton = new Button("Create New Profile");
+        newProfileButton.setMaxWidth(Double.MAX_VALUE);
         newProfileButton.setOnAction(e -> showCreateProfileDialog());
 
         // Training controls
@@ -340,7 +332,7 @@ public class WillSpeakApp extends Application {
 
         // Training progress
         ProgressBar trainingProgress = new ProgressBar(0);
-        trainingProgress.setPrefWidth(Double.MAX_VALUE);
+        trainingProgress.setMaxWidth(Double.MAX_VALUE);
         Label progressLabel = new Label("Ready to start training");
 
         // Current prompt display
@@ -348,7 +340,7 @@ public class WillSpeakApp extends Application {
         promptArea.setEditable(false);
         promptArea.setWrapText(true);
         promptArea.setPrefHeight(80);
-        promptArea.setPrefWidth(Double.MAX_VALUE);
+        promptArea.setMaxWidth(Double.MAX_VALUE);
 
         // Add all controls
         controlsPane.getChildren().addAll(
@@ -368,7 +360,7 @@ public class WillSpeakApp extends Application {
                 progressLabel
         );
 
-        // Training instructions pane
+        // Instructions pane (Center)
         VBox instructionsPane = new VBox(10);
         instructionsPane.setPadding(new Insets(10, 10, 10, 20));
 
@@ -385,6 +377,8 @@ public class WillSpeakApp extends Application {
         );
         instructionsArea.setEditable(false);
         instructionsArea.setWrapText(true);
+        instructionsArea.setPrefRowCount(10);
+        VBox.setVgrow(instructionsArea, Priority.ALWAYS);
 
         instructionsPane.getChildren().addAll(instructionsTitle, instructionsArea);
 
@@ -400,7 +394,6 @@ public class WillSpeakApp extends Application {
                 recordPromptButton.setDisable(!newVal);
                 profileComboBox.setDisable(newVal);
                 newProfileButton.setDisable(newVal);
-
                 if (!newVal) {
                     stopRecordingButton.setDisable(true);
                     progressLabel.setText("Training complete");
@@ -417,7 +410,6 @@ public class WillSpeakApp extends Application {
                 showAlert("No Profile Selected", "Please select or create a user profile first.");
                 return;
             }
-
             trainingController.startTrainingSession();
         });
 
@@ -448,6 +440,7 @@ public class WillSpeakApp extends Application {
         BorderPane content = new BorderPane();
         content.setPadding(new Insets(15));
 
+        // Settings pane (Center)
         VBox settingsPane = new VBox(15);
         settingsPane.setPadding(new Insets(10));
 
@@ -459,9 +452,10 @@ public class WillSpeakApp extends Application {
         serverLabel.setStyle("-fx-font-weight: bold; -fx-font-size: 14px;");
 
         TextField serverUrlField = new TextField(DEFAULT_SERVER_URL);
-        serverUrlField.setPrefWidth(300);
+        serverUrlField.setMaxWidth(Double.MAX_VALUE);
 
         Button connectButton = new Button("Test Connection");
+        connectButton.setMaxWidth(Double.MAX_VALUE);
 
         // Audio settings
         Label audioLabel = new Label("Audio Settings");
@@ -471,18 +465,18 @@ public class WillSpeakApp extends Application {
         ComboBox<String> inputDeviceCombo = new ComboBox<>();
         inputDeviceCombo.setPromptText("Select Input Device");
         inputDeviceCombo.getItems().addAll("Default Input", "Microphone", "Line In");
-        inputDeviceCombo.setPrefWidth(300);
+        inputDeviceCombo.setMaxWidth(Double.MAX_VALUE);
 
         ComboBox<String> outputDeviceCombo = new ComboBox<>();
         outputDeviceCombo.setPromptText("Select Output Device");
         outputDeviceCombo.getItems().addAll("Default Output", "Speakers", "Headphones");
-        outputDeviceCombo.setPrefWidth(300);
+        outputDeviceCombo.setMaxWidth(Double.MAX_VALUE);
 
         Label qualityLabel = new Label("Audio Quality:");
         ComboBox<String> qualityCombo = new ComboBox<>();
         qualityCombo.getItems().addAll("Low (8kHz)", "Medium (16kHz)", "High (44.1kHz)");
         qualityCombo.setValue("Medium (16kHz)");
-        qualityCombo.setPrefWidth(300);
+        qualityCombo.setMaxWidth(Double.MAX_VALUE);
 
         // Profile management
         Label profileManagementLabel = new Label("Profile Management");
@@ -490,14 +484,14 @@ public class WillSpeakApp extends Application {
         profileManagementLabel.setPadding(new Insets(15, 0, 0, 0));
 
         Button syncProfilesButton = new Button("Synchronize Profiles with Server");
-        syncProfilesButton.setPrefWidth(300);
+        syncProfilesButton.setMaxWidth(Double.MAX_VALUE);
 
         Button refreshProfilesButton = new Button("Refresh Local Profiles");
-        refreshProfilesButton.setPrefWidth(300);
+        refreshProfilesButton.setMaxWidth(Double.MAX_VALUE);
 
         // Save settings
         Button saveSettingsButton = new Button("Save Settings");
-        saveSettingsButton.setPrefWidth(150);
+        saveSettingsButton.setMaxWidth(Double.MAX_VALUE);
 
         // Add all controls
         settingsPane.getChildren().addAll(
@@ -516,36 +510,28 @@ public class WillSpeakApp extends Application {
                 profileManagementLabel,
                 syncProfilesButton,
                 refreshProfilesButton,
-                new HBox(10, saveSettingsButton)
+                saveSettingsButton
         );
 
         // Button event handlers
-        connectButton.setOnAction(e -> {
-            mainController.checkServerConnection();
-        });
+        connectButton.setOnAction(e -> mainController.checkServerConnection());
 
-        refreshProfilesButton.setOnAction(e -> {
-            trainingController.loadProfiles();
-        });
+        refreshProfilesButton.setOnAction(e -> trainingController.loadProfiles());
 
         syncProfilesButton.setOnAction(e -> {
-            // TODO: Implement profile synchronization
             showAlert("Not Implemented", "Profile synchronization will be implemented in a future update.");
         });
 
         saveSettingsButton.setOnAction(e -> {
-            // Save server URL if changed
             String newUrl = serverUrlField.getText();
             if (!newUrl.equals(DEFAULT_SERVER_URL)) {
-                // TODO: Update controllers with new URL
                 showAlert("Settings Saved", "Server URL updated. Please restart the application for changes to take effect.");
             }
-
             logger.info("Settings saved");
         });
 
         // Layout
-        content.setLeft(settingsPane);
+        content.setCenter(settingsPane);
 
         tab.setContent(content);
         return tab;
@@ -555,16 +541,13 @@ public class WillSpeakApp extends Application {
      * Display a dialog to create a new user profile.
      */
     private void showCreateProfileDialog() {
-        // Create the dialog
         Dialog<UserProfile> dialog = new Dialog<>();
         dialog.setTitle("Create New Profile");
         dialog.setHeaderText("Enter profile information");
 
-        // Set the button types
         ButtonType createButtonType = new ButtonType("Create", ButtonBar.ButtonData.OK_DONE);
         dialog.getDialogPane().getButtonTypes().addAll(createButtonType, ButtonType.CANCEL);
 
-        // Create the form grid
         GridPane grid = new GridPane();
         grid.setHgap(10);
         grid.setVgap(10);
@@ -582,31 +565,24 @@ public class WillSpeakApp extends Application {
 
         dialog.getDialogPane().setContent(grid);
 
-        // Enable/Disable create button depending on whether a name was entered
         Button createButton = (Button) dialog.getDialogPane().lookupButton(createButtonType);
         createButton.setDisable(true);
 
-        // Validation
         nameField.textProperty().addListener((observable, oldValue, newValue) -> {
             createButton.setDisable(newValue.trim().isEmpty());
         });
 
-        // Convert the result to a profile when the create button is clicked
         dialog.setResultConverter(dialogButton -> {
             if (dialogButton == createButtonType) {
                 String name = nameField.getText();
                 String description = descriptionField.getText();
-
-                // Create profile locally and on server
                 trainingController.createServerProfile(name, description);
                 return new UserProfile(name);
             }
             return null;
         });
 
-        Optional<UserProfile> result = dialog.showAndWait();
-
-        // No need to handle the result directly as the controller already does this
+        dialog.showAndWait();
     }
 
     /**
@@ -622,7 +598,6 @@ public class WillSpeakApp extends Application {
 
     @Override
     public void stop() {
-        // Clean up resources
         if (mainController != null) {
             mainController.shutdown();
         }

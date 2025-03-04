@@ -3,6 +3,7 @@ WillSpeak Server - FastAPI Application
 """
 from fastapi import FastAPI, File, UploadFile, HTTPException, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.routing import APIRoute  # Added for logging routes
 import numpy as np
 import io
 import soundfile as sf
@@ -31,7 +32,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Create data directory if it doesn't exist
+# Create data and models directories if they don't exist
 data_dir = Path(__file__).parent.parent.parent / "data"
 models_dir = Path(__file__).parent.parent.parent / "models"
 
@@ -43,6 +44,7 @@ for directory in [data_dir, models_dir]:
 # Import speech enhancement model functionality
 from willspeak_server.ml.model_integration import get_model, enhance_audio as enhance_audio_with_model
 
+# Helper Functions
 def preprocess_audio(audio_data, sample_rate, target_sr=16000):
     """
     Preprocess audio data:
@@ -90,7 +92,6 @@ def preprocess_audio(audio_data, sample_rate, target_sr=16000):
         for interval in non_silent_intervals:
             start, end = interval
             audio_parts.append(audio_data[start:end])
-
         audio_data = np.concatenate(audio_parts)
 
     logger.info("Preprocessing complete")
@@ -99,6 +100,16 @@ def preprocess_audio(audio_data, sample_rate, target_sr=16000):
 def extract_features(audio_data, sample_rate, n_mfcc=13, n_fft=2048, hop_length=512):
     """
     Extract features from audio data using librosa
+
+    Args:
+        audio_data: Audio signal as numpy array
+        sample_rate: Sample rate of the audio
+        n_mfcc: Number of MFCC coefficients
+        n_fft: FFT window size
+        hop_length: Hop length for feature extraction
+
+    Returns:
+        Dictionary of features and MFCC features array
     """
     logger.info(f"Extracting features: n_mfcc={n_mfcc}, n_fft={n_fft}")
 
@@ -136,6 +147,15 @@ def extract_features(audio_data, sample_rate, n_mfcc=13, n_fft=2048, hop_length=
 def enhance_speech(audio_data, sample_rate, features=None, user_id=None):
     """
     Enhance speech using the model
+
+    Args:
+        audio_data: Audio signal as numpy array
+        sample_rate: Sample rate of the audio
+        features: Optional audio features
+        user_id: Optional user ID for personalized enhancement
+
+    Returns:
+        Enhanced audio data
     """
     # Delegate to the model integration module
     return enhance_audio_with_model(audio_data, sample_rate, user_id)
@@ -143,6 +163,13 @@ def enhance_speech(audio_data, sample_rate, features=None, user_id=None):
 def transcribe_audio(audio_data, sample_rate):
     """
     Transcribe audio using SpeechRecognition
+
+    Args:
+        audio_data: Audio signal as numpy array
+        sample_rate: Sample rate of the audio
+
+    Returns:
+        Transcribed text or empty string on failure
     """
     recognizer = sr.Recognizer()
 
@@ -152,7 +179,7 @@ def transcribe_audio(audio_data, sample_rate):
     audio_source = sr.AudioData(audio_data_bytes, sample_rate, 2)
 
     try:
-        # Try Google's speech recognition service
+        # Use Google's speech recognition service
         text = recognizer.recognize_google(audio_source)
         logger.info(f"Transcription: {text}")
         return text
@@ -163,6 +190,7 @@ def transcribe_audio(audio_data, sample_rate):
         logger.error(f"Could not request results from Speech Recognition service: {e}")
         return ""
 
+# Endpoints
 @app.get("/")
 async def root():
     """Root endpoint - health check"""
@@ -171,6 +199,13 @@ async def root():
 async def process_audio_generic(file: UploadFile, user_id=None):
     """
     Generic audio processing function that can be called with or without a user ID
+
+    Args:
+        file: Uploaded audio file
+        user_id: Optional user ID for personalized processing
+
+    Returns:
+        Dictionary with processing results
     """
     logger.info(f"Processing audio file: {file.filename} for user: {user_id or 'default'}")
 
@@ -185,7 +220,7 @@ async def process_audio_generic(file: UploadFile, user_id=None):
         # Extract features
         features, mfcc_features = extract_features(preprocessed_audio, sample_rate)
 
-        # Try to transcribe the audio (using SpeechRecognition)
+        # Try to transcribe the audio
         transcription = transcribe_audio(preprocessed_audio, 16000)
 
         # Enhance speech with the user's model if provided
@@ -203,7 +238,6 @@ async def process_audio_generic(file: UploadFile, user_id=None):
             "features": features,
             "output_file": output_filename
         }
-
     except Exception as e:
         logger.error(f"Error processing audio: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -212,6 +246,12 @@ async def process_audio_generic(file: UploadFile, user_id=None):
 async def process_audio(file: UploadFile = File(...)):
     """
     Process audio file and return enhanced version
+
+    Args:
+        file: Uploaded audio file
+
+    Returns:
+        Processing results
     """
     return await process_audio_generic(file)
 
@@ -238,10 +278,10 @@ async def websocket_endpoint(websocket: WebSocket):
                 # Convert bytes to numpy array (assuming 16-bit PCM format)
                 audio_chunk = np.frombuffer(data, dtype=np.int16).astype(np.float32) / 32767.0
 
-                # Process audio (basic version)
+                # Process audio
                 processed_chunk = preprocess_audio(audio_chunk, 16000, 16000)
 
-                # Enhance audio (when model is available)
+                # Enhance audio
                 enhanced_chunk = enhance_speech(processed_chunk, 16000, user_id=user_id)
 
                 # Convert back to bytes
@@ -249,22 +289,24 @@ async def websocket_endpoint(websocket: WebSocket):
 
                 # Send enhanced audio back
                 await websocket.send_bytes(enhanced_bytes)
-
             except Exception as e:
                 logger.error(f"Error processing audio chunk: {str(e)}")
                 # Send original data back on error
                 await websocket.send_bytes(data)
-
     except Exception as e:
         logger.error(f"WebSocket error: {str(e)}")
-
     finally:
         logger.info("WebSocket connection closed")
 
-# Import and include the endpoints router
-from willspeak_server.api.endpoints import router
+# Import and include the endpoints router with relative import
+from .endpoints import router
 app.include_router(router)
+logger.info("Included router from endpoints.py")
+for route in app.routes:
+    if isinstance(route, APIRoute):
+        logger.info(f"Route: {route.path} - {route.methods}")
 
+# Main block for direct execution (optional)
 if __name__ == "__main__":
     # Initialize models
     from willspeak_server.ml.model_integration import initialize_models

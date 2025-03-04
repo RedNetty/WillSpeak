@@ -1,2 +1,8 @@
 2025-03-04 10:02:15,193 - willspeak - INFO - Starting WillSpeak Server
 2025-03-04 10:02:15,193 - willspeak - INFO - Server running at http://127.0.0.1:8000
+2025-03-04 10:31:19,653 - willspeak - INFO - Starting WillSpeak Server
+2025-03-04 10:31:19,653 - willspeak - INFO - Initializing speech enhancement models
+2025-03-04 10:31:19,899 - willspeak - INFO - Server running at http://127.0.0.1:8000
+2025-03-04 10:56:42,034 - willspeak - INFO - Starting WillSpeak Server
+2025-03-04 10:56:42,034 - willspeak - INFO - Initializing speech enhancement models
+2025-03-04 10:56:42,253 - willspeak - INFO - Server running at http://127.0.0.1:8000

@@ -1,11 +1,11 @@
 package com.rednetty.willspeak.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule; // Import the JavaTimeModule
 import com.rednetty.willspeak.model.UserProfile;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -40,6 +40,8 @@ public class ProfileManager {
     public ProfileManager(Path profilesDirectory) {
         this.profilesDirectory = profilesDirectory;
         this.objectMapper = new ObjectMapper();
+        // Register the JavaTimeModule to support LocalDateTime
+        this.objectMapper.registerModule(new JavaTimeModule());
         this.profiles = new ArrayList<>();
 
         // Ensure profiles directory exists

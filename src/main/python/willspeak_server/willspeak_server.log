@@ -1,2 +1,48 @@
 2025-03-04 10:01:17.405 | INFO     | willspeak_server.api.server:<module>:41 - Created directory at C:\Users\jaxon\Documents\WillSpeak\src\main\python\data
 2025-03-04 10:01:17.405 | INFO     | willspeak_server.api.server:<module>:41 - Created directory at C:\Users\jaxon\Documents\WillSpeak\src\main\python\models
+2025-03-04 10:21:23.893 | INFO     | willspeak_server.api.server:process_audio_generic:175 - Processing audio file: audio.wav for user: default
+2025-03-04 10:21:23.896 | ERROR    | willspeak_server.api.server:process_audio_generic:208 - Error processing audio: Error opening <_io.BytesIO object at 0x000001A71BD65120>: Format not recognised.
+2025-03-04 10:21:32.974 | INFO     | willspeak_server.api.server:process_audio_generic:175 - Processing audio file: audio.wav for user: default
+2025-03-04 10:21:32.975 | ERROR    | willspeak_server.api.server:process_audio_generic:208 - Error processing audio: Error opening <_io.BytesIO object at 0x000001A71BC80A40>: Format not recognised.
+2025-03-04 10:21:59.451 | INFO     | willspeak_server.api.server:process_audio_generic:175 - Processing audio file: audio.wav for user: default
+2025-03-04 10:21:59.451 | ERROR    | willspeak_server.api.server:process_audio_generic:208 - Error processing audio: Error opening <_io.BytesIO object at 0x000001A71BC80A40>: Format not recognised.
+2025-03-04 10:22:28.432 | INFO     | willspeak_server.api.endpoints:create_user:57 - Created user profile: Jack (496e8bb6-a25a-4a30-85dd-f4e7446ff9c3)
+2025-03-04 10:23:30.320 | INFO     | willspeak_server.api.endpoints:create_user:57 - Created user profile: Jack (ad385980-3176-481d-80f8-aa2c892f2e22)
+2025-03-04 10:23:38.761 | INFO     | willspeak_server.api.endpoints:create_user:57 - Created user profile: Jack (5a866a9e-7e0f-4417-a58d-15e1b55086a9)
+2025-03-04 10:28:50.139 | INFO     | willspeak_server.api.endpoints:create_user:57 - Created user profile: Jack (83f5dbf4-f099-41aa-a8ff-5c3a985dce80)
+2025-03-04 10:31:19.654 | INFO     | willspeak_server.ml.model_integration:initialize_models:65 - Initializing speech enhancement models
+2025-03-04 10:31:19.654 | INFO     | willspeak_server.ml.speech_enhancement_model:__init__:65 - Initialized SpeechEnhancementModel for user: default
+2025-03-04 10:31:19.654 | WARNING  | willspeak_server.ml.speech_enhancement_model:load_model:147 - No pre-trained model found at C:\Users\jaxon\Documents\WillSpeak\src\main\python\willspeak_server\models\base_model
+2025-03-04 10:31:19.654 | WARNING  | willspeak_server.ml.model_integration:initialize_models:72 - No pre-trained model found. Building new model.
+2025-03-04 10:31:19.654 | INFO     | willspeak_server.ml.speech_enhancement_model:build_model:77 - Building model with input shape: (128, 128, 1)
+2025-03-04 10:31:19.899 | INFO     | willspeak_server.ml.speech_enhancement_model:build_model:127 - Model built: None
+2025-03-04 10:31:19.899 | INFO     | willspeak_server.ml.model_integration:initialize_models:75 - Speech enhancement models initialized
+2025-03-04 10:56:42.030 | INFO     | willspeak_server.api.server:<module>:304 - Included router from endpoints.py
+2025-03-04 10:56:42.031 | INFO     | willspeak_server.api.server:<module>:307 - Route: / - {'GET'}
+2025-03-04 10:56:42.031 | INFO     | willspeak_server.api.server:<module>:307 - Route: /process-audio - {'POST'}
+2025-03-04 10:56:42.031 | INFO     | willspeak_server.api.server:<module>:307 - Route: /user/create - {'POST'}
+2025-03-04 10:56:42.031 | INFO     | willspeak_server.api.server:<module>:307 - Route: /user/list - {'GET'}
+2025-03-04 10:56:42.031 | INFO     | willspeak_server.api.server:<module>:307 - Route: /user/{user_id} - {'GET'}
+2025-03-04 10:56:42.031 | INFO     | willspeak_server.api.server:<module>:307 - Route: /user/{user_id}/update - {'POST'}
+2025-03-04 10:56:42.031 | INFO     | willspeak_server.api.server:<module>:307 - Route: /training/start - {'POST'}
+2025-03-04 10:56:42.031 | INFO     | willspeak_server.api.server:<module>:307 - Route: /training/{session_id}/upload - {'POST'}
+2025-03-04 10:56:42.032 | INFO     | willspeak_server.api.server:<module>:307 - Route: /training/{session_id}/complete - {'POST'}
+2025-03-04 10:56:42.032 | INFO     | willspeak_server.api.server:<module>:307 - Route: /process-audio-for-user - {'POST'}
+2025-03-04 10:56:42.034 | INFO     | willspeak_server.ml.model_integration:initialize_models:65 - Initializing speech enhancement models
+2025-03-04 10:56:42.034 | INFO     | willspeak_server.ml.speech_enhancement_model:__init__:65 - Initialized SpeechEnhancementModel for user: default
+2025-03-04 10:56:42.034 | WARNING  | willspeak_server.ml.speech_enhancement_model:load_model:147 - No pre-trained model found at C:\Users\jaxon\Documents\WillSpeak\src\main\python\willspeak_server\models\base_model
+2025-03-04 10:56:42.035 | WARNING  | willspeak_server.ml.model_integration:initialize_models:72 - No pre-trained model found. Building new model.
+2025-03-04 10:56:42.035 | INFO     | willspeak_server.ml.speech_enhancement_model:build_model:77 - Building model with input shape: (128, 128, 1)
+2025-03-04 10:56:42.251 | INFO     | willspeak_server.ml.speech_enhancement_model:build_model:127 - Model built: None
+2025-03-04 10:56:42.251 | INFO     | willspeak_server.ml.model_integration:initialize_models:75 - Speech enhancement models initialized
+2025-03-04 10:56:46.857 | INFO     | willspeak_server.api.server:<module>:304 - Included router from endpoints.py
+2025-03-04 10:56:46.857 | INFO     | willspeak_server.api.server:<module>:307 - Route: / - {'GET'}
+2025-03-04 10:56:46.857 | INFO     | willspeak_server.api.server:<module>:307 - Route: /process-audio - {'POST'}
+2025-03-04 10:56:46.857 | INFO     | willspeak_server.api.server:<module>:307 - Route: /user/create - {'POST'}
+2025-03-04 10:56:46.857 | INFO     | willspeak_server.api.server:<module>:307 - Route: /user/list - {'GET'}
+2025-03-04 10:56:46.857 | INFO     | willspeak_server.api.server:<module>:307 - Route: /user/{user_id} - {'GET'}
+2025-03-04 10:56:46.857 | INFO     | willspeak_server.api.server:<module>:307 - Route: /user/{user_id}/update - {'POST'}
+2025-03-04 10:56:46.857 | INFO     | willspeak_server.api.server:<module>:307 - Route: /training/start - {'POST'}
+2025-03-04 10:56:46.857 | INFO     | willspeak_server.api.server:<module>:307 - Route: /training/{session_id}/upload - {'POST'}
+2025-03-04 10:56:46.857 | INFO     | willspeak_server.api.server:<module>:307 - Route: /training/{session_id}/complete - {'POST'}
+2025-03-04 10:56:46.857 | INFO     | willspeak_server.api.server:<module>:307 - Route: /process-audio-for-user - {'POST'}
