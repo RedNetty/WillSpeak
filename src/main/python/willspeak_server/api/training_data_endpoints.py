@@ -23,11 +23,16 @@ from willspeak_server.ml.model_integration import train_model
 # Create router
 training_data_router = APIRouter(prefix="/training-data", tags=["training-data"])
 
-# Import necessary paths from configuration to ensure consistency
-from willspeak_server.api.config import data_dir, training_data_dir, user_dir
+# Get the paths from central configuration
+from willspeak_server.api.config import data_dir, user_dir, training_data_dir
 
 # Ensure directories exist
-training_data_dir.mkdir(exist_ok=True)
+for directory in [data_dir, user_dir, training_data_dir]:
+    os.makedirs(directory, exist_ok=True)
+
+# Create jobs directory
+jobs_dir = training_data_dir / "jobs"
+os.makedirs(jobs_dir, exist_ok=True)
 
 
 @training_data_router.post("/create-pair")
@@ -436,9 +441,6 @@ async def train_from_pairs(
 
     # Create a training job
     job_id = str(uuid.uuid4())
-    jobs_dir = training_data_dir / "jobs"
-    jobs_dir.mkdir(parents=True, exist_ok=True)
-
     job_dir = jobs_dir / job_id
     job_dir.mkdir(parents=True, exist_ok=True)
 
@@ -492,7 +494,6 @@ async def list_training_jobs(user_id: str):
     if not await verify_user_exists(user_id):
         raise HTTPException(status_code=404, detail=f"User not found: {user_id}")
 
-    jobs_dir = training_data_dir / "jobs"
     if not jobs_dir.exists():
         return {"jobs": []}
 
@@ -509,7 +510,7 @@ async def list_training_jobs(user_id: str):
                     if job_info.get("user_id") == user_id:
                         jobs.append(job_info)
                 except Exception as e:
-                    logger.error(f"Error loading job info: {e}")
+                    logger.error(f"Error loading job info from {job_info_path}: {e}")
 
     return {"jobs": jobs}
 
@@ -525,7 +526,7 @@ async def get_training_job_status(job_id: str):
     Returns:
         Training job status
     """
-    job_dir = training_data_dir / "jobs" / job_id
+    job_dir = jobs_dir / job_id
     job_info_path = job_dir / "job_info.json"
 
     if not job_info_path.exists():
@@ -535,9 +536,47 @@ async def get_training_job_status(job_id: str):
         with open(job_info_path, "r") as f:
             job_info = json.load(f)
         return job_info
+    except json.JSONDecodeError as e:
+        logger.error(f"Error loading job info from {job_info_path}: {e}")
+
+        # Create a backup of the corrupted file
+        try:
+            backup_path = job_info_path.with_suffix('.json.corrupted')
+
+            # Read the raw file content
+            with open(job_info_path, "r") as f:
+                file_content = f.read()
+
+            with open(backup_path, "w") as f:
+                f.write(file_content)
+
+            logger.warning(f"Created backup of corrupted job file at {backup_path}")
+
+            # Create a basic valid job info
+            basic_job_info = {
+                "id": job_id,
+                "status": "failed",
+                "error": "Job info file was corrupted and has been reset",
+                "created": datetime.now().isoformat(),
+                "completed": datetime.now().isoformat()
+            }
+
+            # Save the basic job info
+            with open(job_info_path, "w") as f:
+                json.dump(basic_job_info, f, indent=2)
+
+            logger.info(f"Reset corrupted job info file for job {job_id}")
+            return basic_job_info
+
+        except Exception as backup_error:
+            logger.error(f"Failed to create backup of corrupted job file: {backup_error}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Error loading job info: {str(e)}. Backup attempt failed: {str(backup_error)}"
+            )
     except Exception as e:
-        logger.error(f"Error loading job info: {e}")
-        raise HTTPException(status_code=500, detail=f"Error loading job info: {str(e)}")
+        logger.error(f"Error accessing job info file {job_info_path}: {e}")
+        raise HTTPException(status_code=500, detail=f"Error accessing job info: {str(e)}")
 
 
 async def _run_training_job(job_id: str, user_id: str, impaired_paths: List[str], clear_paths: List[str]):
@@ -550,7 +589,7 @@ async def _run_training_job(job_id: str, user_id: str, impaired_paths: List[str]
         impaired_paths: List of paths to impaired audio files
         clear_paths: List of paths to clear audio files
     """
-    job_dir = training_data_dir / "jobs" / job_id
+    job_dir = jobs_dir / job_id
     job_info_path = job_dir / "job_info.json"
 
     try:
@@ -569,10 +608,48 @@ async def _run_training_job(job_id: str, user_id: str, impaired_paths: List[str]
             # Call the model training function from model_integration.py
             metrics = train_model(impaired_paths, clear_paths, user_id)
 
+            # Convert any NumPy types to native Python types for JSON serialization
+            serializable_metrics = {}
+            for key, value in metrics.items():
+                if isinstance(value, (np.integer, np.int64, np.int32)):
+                    serializable_metrics[key] = int(value)
+                elif isinstance(value, (np.floating, np.float64, np.float32)):
+                    serializable_metrics[key] = float(value)
+                elif isinstance(value, np.ndarray):
+                    serializable_metrics[key] = value.tolist()
+                elif isinstance(value, list):
+                    # Handle lists that might contain NumPy types
+                    serializable_list = []
+                    for item in value:
+                        if isinstance(item, (np.integer, np.int64, np.int32)):
+                            serializable_list.append(int(item))
+                        elif isinstance(item, (np.floating, np.float64, np.float32)):
+                            serializable_list.append(float(item))
+                        elif isinstance(item, np.ndarray):
+                            serializable_list.append(item.tolist())
+                        elif isinstance(item, dict):
+                            # Handle dictionaries within lists
+                            serializable_dict = {}
+                            for k, v in item.items():
+                                if isinstance(v, (np.integer, np.int64, np.int32)):
+                                    serializable_dict[k] = int(v)
+                                elif isinstance(v, (np.floating, np.float64, np.float32)):
+                                    serializable_dict[k] = float(v)
+                                elif isinstance(v, np.ndarray):
+                                    serializable_dict[k] = v.tolist()
+                                else:
+                                    serializable_dict[k] = v
+                            serializable_list.append(serializable_dict)
+                        else:
+                            serializable_list.append(item)
+                    serializable_metrics[key] = serializable_list
+                else:
+                    serializable_metrics[key] = value
+
             # Update job with success
             job_info["status"] = "completed"
             job_info["completed"] = datetime.now().isoformat()
-            job_info["metrics"] = metrics
+            job_info["metrics"] = serializable_metrics
 
             with open(job_info_path, "w") as f:
                 json.dump(job_info, f, indent=2)
