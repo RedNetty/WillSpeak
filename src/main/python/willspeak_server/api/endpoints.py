@@ -3,8 +3,8 @@ Additional endpoints for WillSpeak server
 
 Adds user profile management and model training endpoints
 """
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException, BackgroundTasks
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException, BackgroundTasks, Depends
+from fastapi.responses import FileResponse, JSONResponse
 from typing import List, Optional
 import os
 import shutil
@@ -29,6 +29,41 @@ training_dir = data_dir / "training"
 for directory in [data_dir, user_dir, training_dir]:
     directory.mkdir(exist_ok=True)
 
+
+@router.get("/debug/paths")
+async def debug_paths():
+    """Debug endpoint to check paths and directories"""
+    result = {
+        "data_dir": str(data_dir),
+        "user_dir": str(user_dir),
+        "training_dir": str(training_dir),
+        "data_dir_exists": data_dir.exists(),
+        "user_dir_exists": user_dir.exists(),
+        "training_dir_exists": training_dir.exists(),
+        "user_count": sum(1 for _ in user_dir.iterdir()) if user_dir.exists() else 0
+    }
+
+    # Get a list of user directories
+    if user_dir.exists():
+        result["users"] = []
+        for user_path in user_dir.iterdir():
+            if user_path.is_dir():
+                profile_path = user_path / "profile.json"
+                user_info = {
+                    "directory": str(user_path),
+                    "profile_exists": profile_path.exists()
+                }
+                if profile_path.exists():
+                    try:
+                        with open(profile_path, "r") as f:
+                            profile = json.load(f)
+                        user_info["id"] = profile.get("id")
+                        user_info["name"] = profile.get("name")
+                    except Exception as e:
+                        user_info["error"] = str(e)
+                result["users"].append(user_info)
+
+    return result
 
 @router.post("/user/create")
 async def create_user(name: str = Form(...), description: Optional[str] = Form(None)):
@@ -166,8 +201,7 @@ async def start_training_session(user_id: str = Form(...)):
 async def upload_training_sample(
         session_id: str,
         prompt: str = Form(...),
-        audio_file: UploadFile = File(...),
-        clear_audio_file: Optional[UploadFile] = None
+        audio_file: UploadFile = File(...)
 ):
     """Upload a training sample for a session"""
     session_path = training_dir / session_id
@@ -182,24 +216,16 @@ async def upload_training_sample(
     # Generate sample ID
     sample_id = str(uuid.uuid4())
 
-    # Save unclear audio
-    unclear_path = session_path / f"unclear_{sample_id}.wav"
-    with open(unclear_path, "wb") as f:
+    # Save audio
+    audio_path = session_path / f"audio_{sample_id}.wav"
+    with open(audio_path, "wb") as f:
         f.write(await audio_file.read())
-
-    # Save clear audio if provided
-    clear_path = None
-    if clear_audio_file:
-        clear_path = session_path / f"clear_{sample_id}.wav"
-        with open(clear_path, "wb") as f:
-            f.write(await clear_audio_file.read())
 
     # Create sample info
     sample = {
         "id": sample_id,
         "prompt": prompt,
-        "unclear_path": str(unclear_path),
-        "clear_path": str(clear_path) if clear_path else None,
+        "audio_path": str(audio_path),
         "uploaded": datetime.datetime.now().isoformat()
     }
 
@@ -245,22 +271,14 @@ async def complete_training_session(session_id: str, background_tasks: Backgroun
         json.dump(session, f, indent=2)
 
     # Prepare training data
-    unclear_paths = []
-    clear_paths = []
-
+    audio_paths = []
     for sample in session["samples"]:
-        unclear_paths.append(sample["unclear_path"])
-        if sample["clear_path"]:
-            clear_paths.append(sample["clear_path"])
-        else:
-            # If no clear audio, use unclear as target (for now)
-            clear_paths.append(sample["unclear_path"])
+        audio_paths.append(sample["audio_path"])
 
     # Start training in background
     background_tasks.add_task(
         _train_model_background,
-        unclear_paths=unclear_paths,
-        clear_paths=clear_paths,
+        audio_paths=audio_paths,
         user_id=user_id,
         session_id=session_id
     )
@@ -269,13 +287,13 @@ async def complete_training_session(session_id: str, background_tasks: Backgroun
     return {"status": "success", "message": "Training started in background"}
 
 
-async def _train_model_background(unclear_paths, clear_paths, user_id, session_id):
+async def _train_model_background(audio_paths, user_id, session_id):
     """Background task to train model"""
     session_path = training_dir / session_id
 
     try:
         # Train model
-        metrics = train_model(unclear_paths, clear_paths, user_id)
+        metrics = train_model(audio_paths, audio_paths, user_id)  # Using same paths for input/target as placeholder
 
         # Update session with metrics
         with open(session_path / "session.json", "r") as f:
@@ -314,17 +332,44 @@ async def _train_model_background(unclear_paths, clear_paths, user_id, session_i
             json.dump(session, f, indent=2)
 
 
-@router.post("/process-audio-for-user")
-async def process_audio_for_user(user_id: str = Form(...), file: UploadFile = File(...)):
-    """Process audio with user-specific model"""
-    from willspeak_server.api.server import process_audio_generic
+async def verify_user_exists(user_id: str) -> bool:
+    """
+    Verify if a user exists in the system.
 
-    # Check if user exists
+    Args:
+        user_id: The user ID to check
+
+    Returns:
+        bool: True if the user exists, False otherwise
+    """
     user_path = user_dir / user_id
     profile_path = user_path / "profile.json"
 
-    if not profile_path.exists():
-        raise HTTPException(status_code=404, detail="User not found")
+    # Log the verification attempt and paths for debugging
+    logger.info(f"Verifying user existence: {user_id}")
+    logger.debug(f"Checking path: {profile_path}")
 
-    # Process audio with user's model
-    return await process_audio_generic(file, user_id)
+    # Check if the user directory and profile file exist
+    if not user_path.exists():
+        logger.warning(f"User directory not found: {user_path}")
+        return False
+
+    if not profile_path.exists():
+        logger.warning(f"User profile not found: {profile_path}")
+        return False
+
+    # Validate the profile file
+    try:
+        with open(profile_path, "r") as f:
+            profile = json.load(f)
+
+        # Check if the profile has the required fields
+        if "id" not in profile or profile["id"] != user_id:
+            logger.warning(f"User profile has invalid ID: {profile.get('id', 'missing')} != {user_id}")
+            return False
+
+        logger.info(f"User verified: {user_id} ({profile.get('name', 'unnamed')})")
+        return True
+    except Exception as e:
+        logger.error(f"Error verifying user {user_id}: {str(e)}")
+        return False

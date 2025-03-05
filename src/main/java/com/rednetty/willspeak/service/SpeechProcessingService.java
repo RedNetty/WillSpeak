@@ -68,11 +68,16 @@ public class SpeechProcessingService {
     public JsonNode processAudio(byte[] audioBytes, String userId) throws IOException, InterruptedException {
         logger.info("Processing audio file ({} bytes) for user: {}", audioBytes.length, userId != null ? userId : "default");
 
-        // Create temporary file
-        Path tempFile = Files.createTempFile("willspeak_", ".wav");
-        Files.write(tempFile, audioBytes);
+        // Make sure we have valid WAV data with proper headers
+        byte[] wavBytes = ensureValidWavFormat(audioBytes);
 
+        // Create temporary file with .wav extension
+        Path tempFile = Files.createTempFile("willspeak_", ".wav");
         try {
+            // Write the bytes to the temp file
+            Files.write(tempFile, wavBytes);
+            logger.debug("Created temporary WAV file at: {}", tempFile);
+
             // Build multipart request
             String boundary = "WillSpeakBoundary" + System.currentTimeMillis();
             ByteArrayOutputStream requestBody = new ByteArrayOutputStream();
@@ -87,13 +92,13 @@ public class SpeechProcessingService {
                 requestBody.write("\r\n".getBytes());
             }
 
-            // Add file part
+            // Add file part - using the temp file to ensure we have a valid WAV file
             String filePartHeader =
                     "--" + boundary + "\r\n" +
                             "Content-Disposition: form-data; name=\"file\"; filename=\"audio.wav\"\r\n" +
                             "Content-Type: audio/wav\r\n\r\n";
             requestBody.write(filePartHeader.getBytes());
-            requestBody.write(audioBytes);
+            requestBody.write(Files.readAllBytes(tempFile));  // Read from the valid WAV file
             requestBody.write(("\r\n--" + boundary + "--\r\n").getBytes());
 
             // Select endpoint based on whether user ID is provided
@@ -121,8 +126,103 @@ public class SpeechProcessingService {
             }
         } finally {
             // Clean up temporary file
-            Files.deleteIfExists(tempFile);
+            try {
+                Files.deleteIfExists(tempFile);
+                logger.debug("Deleted temporary file: {}", tempFile);
+            } catch (IOException e) {
+                logger.warn("Failed to delete temporary file: {}", e.getMessage());
+            }
         }
+    }
+
+    /**
+     * Ensure the audio data has a valid WAV header.
+     * If the data already has a valid RIFF header, it returns it as is.
+     * Otherwise, it creates a proper WAV header and prepends it to the data.
+     *
+     * @param audioBytes Raw audio data bytes
+     * @return A valid WAV file as a byte array
+     */
+    private byte[] ensureValidWavFormat(byte[] audioBytes) {
+        // Check if the data already starts with "RIFF" (valid WAV header)
+        if (audioBytes.length >= 4 &&
+                audioBytes[0] == 'R' && audioBytes[1] == 'I' &&
+                audioBytes[2] == 'F' && audioBytes[3] == 'F') {
+            logger.debug("Audio data already has a valid WAV header");
+            return audioBytes;
+        }
+
+        logger.info("Adding WAV header to raw audio data");
+
+        // Audio format parameters - match what AudioCaptureService uses
+        final int sampleRate = 16000;
+        final int bitsPerSample = 16;
+        final int channels = 1;
+
+        // Calculate sizes
+        int audioDataSize = audioBytes.length;
+        int headerSize = 44;  // Standard WAV header size
+        int totalSize = headerSize + audioDataSize;
+
+        // Create byte array for the full WAV file
+        ByteArrayOutputStream wavStream = new ByteArrayOutputStream(totalSize);
+
+        try {
+            // RIFF header
+            wavStream.write("RIFF".getBytes());
+            writeInt(wavStream, totalSize - 8);  // File size minus RIFF header
+            wavStream.write("WAVE".getBytes());
+
+            // Format chunk
+            wavStream.write("fmt ".getBytes());
+            writeInt(wavStream, 16);  // Format chunk size
+            writeShort(wavStream, 1);  // Audio format: PCM = 1
+            writeShort(wavStream, channels);  // Number of channels
+            writeInt(wavStream, sampleRate);  // Sample rate
+            writeInt(wavStream, sampleRate * channels * bitsPerSample / 8);  // Byte rate
+            writeShort(wavStream, channels * bitsPerSample / 8);  // Block align
+            writeShort(wavStream, bitsPerSample);  // Bits per sample
+
+            // Data chunk
+            wavStream.write("data".getBytes());
+            writeInt(wavStream, audioDataSize);  // Data chunk size
+
+            // Audio data
+            wavStream.write(audioBytes);
+
+            logger.debug("Successfully created WAV header for {} bytes of audio data", audioDataSize);
+            return wavStream.toByteArray();
+        } catch (IOException e) {
+            logger.error("Error creating WAV header: {}", e.getMessage());
+            // If header creation fails, return original data as fallback
+            return audioBytes;
+        }
+    }
+
+    /**
+     * Write a 32-bit integer to an output stream in little-endian format.
+     *
+     * @param stream The output stream
+     * @param value The integer value to write
+     * @throws IOException if writing fails
+     */
+    private void writeInt(ByteArrayOutputStream stream, int value) throws IOException {
+        stream.write(value & 0xFF);
+        stream.write((value >> 8) & 0xFF);
+        stream.write((value >> 16) & 0xFF);
+        stream.write((value >> 24) & 0xFF);
+    }
+
+    /**
+     * Write a 16-bit short to an output stream in little-endian format.
+     *
+     * @param stream The output stream
+     * @param value The short value to write
+     * @throws IOException if writing fails
+     */
+    private void writeShort(ByteArrayOutputStream stream, int value) throws IOException {
+        stream.write(value & 0xFF);
+        stream.write((value >> 8) & 0xFF);
     }
 
     /**
@@ -316,30 +416,50 @@ public class SpeechProcessingService {
     public CompletableFuture<JsonNode> startTrainingSession(String userId) {
         CompletableFuture<JsonNode> future = new CompletableFuture<>();
 
-        // Build form data
-        Map<String, String> formData = new HashMap<>();
-        formData.put("user_id", userId);
+        try {
+            // Use multipart/form-data instead of application/x-www-form-urlencoded
+            String boundary = "WillSpeakBoundary" + System.currentTimeMillis();
+            ByteArrayOutputStream requestBody = new ByteArrayOutputStream();
 
-        // Create and send request asynchronously
-        createFormDataRequest("/training/start", formData)
-                .thenCompose(request -> httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString()))
-                .thenApply(response -> {
-                    if (response.statusCode() != 200) {
-                        throw new RuntimeException("Server returned status code: " + response.statusCode());
-                    }
-                    try {
-                        return objectMapper.readTree(response.body());
-                    } catch (Exception e) {
-                        throw new RuntimeException("Error parsing response JSON", e);
-                    }
-                })
-                .whenComplete((result, error) -> {
-                    if (error != null) {
-                        future.completeExceptionally(error);
-                    } else {
-                        future.complete(result);
-                    }
-                });
+            // Add user_id part
+            String userIdPartHeader =
+                    "--" + boundary + "\r\n" +
+                            "Content-Disposition: form-data; name=\"user_id\"\r\n\r\n";
+            requestBody.write(userIdPartHeader.getBytes());
+            requestBody.write(userId.getBytes());
+            requestBody.write(("\r\n--" + boundary + "--\r\n").getBytes());
+
+            // Create HTTP request
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(serverUrl + "/training/start"))
+                    .header("Content-Type", "multipart/form-data; boundary=" + boundary)
+                    .POST(HttpRequest.BodyPublishers.ofByteArray(requestBody.toByteArray()))
+                    .build();
+
+            // Send request
+            httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+                    .thenApply(response -> {
+                        if (response.statusCode() != 200) {
+                            logger.error("Server returned error for training start: {} {}",
+                                    response.statusCode(), response.body());
+                            throw new RuntimeException("Server returned status code: " + response.statusCode());
+                        }
+                        try {
+                            return objectMapper.readTree(response.body());
+                        } catch (Exception e) {
+                            throw new RuntimeException("Error parsing response JSON", e);
+                        }
+                    })
+                    .whenComplete((result, error) -> {
+                        if (error != null) {
+                            future.completeExceptionally(error);
+                        } else {
+                            future.complete(result);
+                        }
+                    });
+        } catch (Exception e) {
+            future.completeExceptionally(e);
+        }
 
         return future;
     }
@@ -443,6 +563,426 @@ public class SpeechProcessingService {
                         future.complete(result);
                     }
                 });
+
+        return future;
+    }
+
+    /**
+     * Create a training pair with both impaired and clear speech for the same prompt.
+     *
+     * @param impairedAudioFile The impaired speech audio file
+     * @param clearAudioFile The clear speech audio file
+     * @param prompt The text that was spoken
+     * @param userId The user ID this training pair is for
+     * @param notes Optional notes about the speech pattern
+     * @return CompletableFuture containing the response JSON
+     */
+    public CompletableFuture<JsonNode> createTrainingPair(
+            File impairedAudioFile,
+            File clearAudioFile,
+            String prompt,
+            String userId,
+            String notes) {
+
+        CompletableFuture<JsonNode> future = new CompletableFuture<>();
+
+        try {
+            // Build multipart request
+            String boundary = "WillSpeakBoundary" + System.currentTimeMillis();
+            ByteArrayOutputStream requestBody = new ByteArrayOutputStream();
+
+            // Add prompt part
+            String promptPartHeader =
+                    "--" + boundary + "\r\n" +
+                            "Content-Disposition: form-data; name=\"prompt\"\r\n\r\n";
+            requestBody.write(promptPartHeader.getBytes());
+            requestBody.write(prompt.getBytes());
+            requestBody.write("\r\n".getBytes());
+
+            // Add user ID part
+            String userIdPartHeader =
+                    "--" + boundary + "\r\n" +
+                            "Content-Disposition: form-data; name=\"user_id\"\r\n\r\n";
+            requestBody.write(userIdPartHeader.getBytes());
+            requestBody.write(userId.getBytes());
+            requestBody.write("\r\n".getBytes());
+
+            // Add notes part if provided
+            if (notes != null && !notes.isEmpty()) {
+                String notesPartHeader =
+                        "--" + boundary + "\r\n" +
+                                "Content-Disposition: form-data; name=\"notes\"\r\n\r\n";
+                requestBody.write(notesPartHeader.getBytes());
+                requestBody.write(notes.getBytes());
+                requestBody.write("\r\n".getBytes());
+            }
+
+            // Add impaired audio file part
+            String impairedPartHeader =
+                    "--" + boundary + "\r\n" +
+                            "Content-Disposition: form-data; name=\"impaired_audio\"; filename=\"" +
+                            impairedAudioFile.getName() + "\"\r\n" +
+                            "Content-Type: audio/wav\r\n\r\n";
+            requestBody.write(impairedPartHeader.getBytes());
+            requestBody.write(Files.readAllBytes(impairedAudioFile.toPath()));
+            requestBody.write("\r\n".getBytes());
+
+            // Add clear audio file part
+            String clearPartHeader =
+                    "--" + boundary + "\r\n" +
+                            "Content-Disposition: form-data; name=\"clear_audio\"; filename=\"" +
+                            clearAudioFile.getName() + "\"\r\n" +
+                            "Content-Type: audio/wav\r\n\r\n";
+            requestBody.write(clearPartHeader.getBytes());
+            requestBody.write(Files.readAllBytes(clearAudioFile.toPath()));
+            requestBody.write(("\r\n--" + boundary + "--\r\n").getBytes());
+
+            // Create HTTP request
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(serverUrl + "/training-data/create-pair"))
+                    .header("Content-Type", "multipart/form-data; boundary=" + boundary)
+                    .POST(HttpRequest.BodyPublishers.ofByteArray(requestBody.toByteArray()))
+                    .build();
+
+            // Send request
+            httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+                    .thenApply(response -> {
+                        if (response.statusCode() != 200) {
+                            throw new RuntimeException("Server returned status code: " + response.statusCode());
+                        }
+                        try {
+                            return objectMapper.readTree(response.body());
+                        } catch (Exception e) {
+                            throw new RuntimeException("Error parsing response JSON", e);
+                        }
+                    })
+                    .whenComplete((result, error) -> {
+                        if (error != null) {
+                            future.completeExceptionally(error);
+                        } else {
+                            future.complete(result);
+                        }
+                    });
+
+        } catch (Exception e) {
+            future.completeExceptionally(e);
+        }
+
+        return future;
+    }
+
+    /**
+     * Upload a clear speech template that can be used as a reference.
+     *
+     * @param audioFile The clear speech audio file
+     * @param prompt The text that was spoken
+     * @param speakerName Name of the speaker
+     * @param category Optional category for organization
+     * @return CompletableFuture containing the response JSON
+     */
+    public CompletableFuture<JsonNode> uploadClearTemplate(
+            File audioFile,
+            String prompt,
+            String speakerName,
+            String category) {
+
+        CompletableFuture<JsonNode> future = new CompletableFuture<>();
+
+        try {
+            // Build multipart request
+            String boundary = "WillSpeakBoundary" + System.currentTimeMillis();
+            ByteArrayOutputStream requestBody = new ByteArrayOutputStream();
+
+            // Add prompt part
+            String promptPartHeader =
+                    "--" + boundary + "\r\n" +
+                            "Content-Disposition: form-data; name=\"prompt\"\r\n\r\n";
+            requestBody.write(promptPartHeader.getBytes());
+            requestBody.write(prompt.getBytes());
+            requestBody.write("\r\n".getBytes());
+
+            // Add speaker name part
+            String speakerPartHeader =
+                    "--" + boundary + "\r\n" +
+                            "Content-Disposition: form-data; name=\"speaker_name\"\r\n\r\n";
+            requestBody.write(speakerPartHeader.getBytes());
+            requestBody.write(speakerName.getBytes());
+            requestBody.write("\r\n".getBytes());
+
+            // Add category part if provided
+            if (category != null && !category.isEmpty()) {
+                String categoryPartHeader =
+                        "--" + boundary + "\r\n" +
+                                "Content-Disposition: form-data; name=\"category\"\r\n\r\n";
+                requestBody.write(categoryPartHeader.getBytes());
+                requestBody.write(category.getBytes());
+                requestBody.write("\r\n".getBytes());
+            }
+
+            // Add audio file part
+            String audioPartHeader =
+                    "--" + boundary + "\r\n" +
+                            "Content-Disposition: form-data; name=\"audio\"; filename=\"" +
+                            audioFile.getName() + "\"\r\n" +
+                            "Content-Type: audio/wav\r\n\r\n";
+            requestBody.write(audioPartHeader.getBytes());
+            requestBody.write(Files.readAllBytes(audioFile.toPath()));
+            requestBody.write(("\r\n--" + boundary + "--\r\n").getBytes());
+
+            // Create HTTP request
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(serverUrl + "/training-data/upload-clear-template"))
+                    .header("Content-Type", "multipart/form-data; boundary=" + boundary)
+                    .POST(HttpRequest.BodyPublishers.ofByteArray(requestBody.toByteArray()))
+                    .build();
+
+            // Send request
+            httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+                    .thenApply(response -> {
+                        if (response.statusCode() != 200) {
+                            throw new RuntimeException("Server returned status code: " + response.statusCode());
+                        }
+                        try {
+                            return objectMapper.readTree(response.body());
+                        } catch (Exception e) {
+                            throw new RuntimeException("Error parsing response JSON", e);
+                        }
+                    })
+                    .whenComplete((result, error) -> {
+                        if (error != null) {
+                            future.completeExceptionally(error);
+                        } else {
+                            future.complete(result);
+                        }
+                    });
+
+        } catch (Exception e) {
+            future.completeExceptionally(e);
+        }
+
+        return future;
+    }
+
+    /**
+     * Get all templates that can be used for training.
+     *
+     * @param category Optional category filter
+     * @return CompletableFuture containing the response JSON
+     */
+    public CompletableFuture<JsonNode> getTemplates(String category) {
+        CompletableFuture<JsonNode> future = new CompletableFuture<>();
+
+        String endpoint = "/training-data/templates";
+        if (category != null && !category.isEmpty()) {
+            endpoint += "?category=" + URLEncoder.encode(category, StandardCharsets.UTF_8);
+        }
+
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(serverUrl + endpoint))
+                .GET()
+                .build();
+
+        httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+                .thenApply(response -> {
+                    if (response.statusCode() != 200) {
+                        throw new RuntimeException("Server returned status code: " + response.statusCode());
+                    }
+                    try {
+                        return objectMapper.readTree(response.body());
+                    } catch (Exception e) {
+                        throw new RuntimeException("Error parsing response JSON", e);
+                    }
+                })
+                .whenComplete((result, error) -> {
+                    if (error != null) {
+                        future.completeExceptionally(error);
+                    } else {
+                        future.complete(result);
+                    }
+                });
+
+        return future;
+    }
+
+    /**
+     * Get all training pairs for a specific user.
+     *
+     * @param userId The user ID to get training pairs for
+     * @return CompletableFuture containing the response JSON
+     */
+    public CompletableFuture<JsonNode> getUserTrainingPairs(String userId) {
+        CompletableFuture<JsonNode> future = new CompletableFuture<>();
+
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(serverUrl + "/training-data/user-pairs/" + userId))
+                .GET()
+                .build();
+
+        httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+                .thenApply(response -> {
+                    if (response.statusCode() != 200) {
+                        throw new RuntimeException("Server returned status code: " + response.statusCode());
+                    }
+                    try {
+                        return objectMapper.readTree(response.body());
+                    } catch (Exception e) {
+                        throw new RuntimeException("Error parsing response JSON", e);
+                    }
+                })
+                .whenComplete((result, error) -> {
+                    if (error != null) {
+                        future.completeExceptionally(error);
+                    } else {
+                        future.complete(result);
+                    }
+                });
+
+        return future;
+    }
+
+    /**
+     * Use a template for training with a user's impaired speech.
+     *
+     * @param impairedAudioFile The user's impaired speech audio file
+     * @param templateId ID of the clear speech template to use
+     * @param userId The user ID this training pair is for
+     * @param notes Optional notes about the speech pattern
+     * @return CompletableFuture containing the response JSON
+     */
+    public CompletableFuture<JsonNode> useTemplateForTraining(
+            File impairedAudioFile,
+            String templateId,
+            String userId,
+            String notes) {
+
+        CompletableFuture<JsonNode> future = new CompletableFuture<>();
+
+        try {
+            // Build multipart request
+            String boundary = "WillSpeakBoundary" + System.currentTimeMillis();
+            ByteArrayOutputStream requestBody = new ByteArrayOutputStream();
+
+            // Add template ID part
+            String templatePartHeader =
+                    "--" + boundary + "\r\n" +
+                            "Content-Disposition: form-data; name=\"template_id\"\r\n\r\n";
+            requestBody.write(templatePartHeader.getBytes());
+            requestBody.write(templateId.getBytes());
+            requestBody.write("\r\n".getBytes());
+
+            // Add user ID part
+            String userIdPartHeader =
+                    "--" + boundary + "\r\n" +
+                            "Content-Disposition: form-data; name=\"user_id\"\r\n\r\n";
+            requestBody.write(userIdPartHeader.getBytes());
+            requestBody.write(userId.getBytes());
+            requestBody.write("\r\n".getBytes());
+
+            // Add notes part if provided
+            if (notes != null && !notes.isEmpty()) {
+                String notesPartHeader =
+                        "--" + boundary + "\r\n" +
+                                "Content-Disposition: form-data; name=\"notes\"\r\n\r\n";
+                requestBody.write(notesPartHeader.getBytes());
+                requestBody.write(notes.getBytes());
+                requestBody.write("\r\n".getBytes());
+            }
+
+            // Add impaired audio file part
+            String audioPartHeader =
+                    "--" + boundary + "\r\n" +
+                            "Content-Disposition: form-data; name=\"impaired_audio\"; filename=\"" +
+                            impairedAudioFile.getName() + "\"\r\n" +
+                            "Content-Type: audio/wav\r\n\r\n";
+            requestBody.write(audioPartHeader.getBytes());
+            requestBody.write(Files.readAllBytes(impairedAudioFile.toPath()));
+            requestBody.write(("\r\n--" + boundary + "--\r\n").getBytes());
+
+            // Create HTTP request
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(serverUrl + "/training-data/use-template"))
+                    .header("Content-Type", "multipart/form-data; boundary=" + boundary)
+                    .POST(HttpRequest.BodyPublishers.ofByteArray(requestBody.toByteArray()))
+                    .build();
+
+            // Send request
+            httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+                    .thenApply(response -> {
+                        if (response.statusCode() != 200) {
+                            throw new RuntimeException("Server returned status code: " + response.statusCode());
+                        }
+                        try {
+                            return objectMapper.readTree(response.body());
+                        } catch (Exception e) {
+                            throw new RuntimeException("Error parsing response JSON", e);
+                        }
+                    })
+                    .whenComplete((result, error) -> {
+                        if (error != null) {
+                            future.completeExceptionally(error);
+                        } else {
+                            future.complete(result);
+                        }
+                    });
+
+        } catch (Exception e) {
+            future.completeExceptionally(e);
+        }
+
+        return future;
+    }
+
+    /**
+     * Train a model from collected training pairs.
+     *
+     * @param userId The user ID to train model for
+     * @return CompletableFuture containing the response JSON
+     */
+    public CompletableFuture<JsonNode> trainFromPairs(String userId) {
+        CompletableFuture<JsonNode> future = new CompletableFuture<>();
+
+        try {
+            String boundary = "WillSpeakBoundary" + System.currentTimeMillis();
+            ByteArrayOutputStream requestBody = new ByteArrayOutputStream();
+
+            // Add user ID part
+            String userIdPartHeader =
+                    "--" + boundary + "\r\n" +
+                            "Content-Disposition: form-data; name=\"user_id\"\r\n\r\n";
+            requestBody.write(userIdPartHeader.getBytes());
+            requestBody.write(userId.getBytes());
+            requestBody.write(("\r\n--" + boundary + "--\r\n").getBytes());
+
+            // Create HTTP request
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(serverUrl + "/training-data/train-from-pairs"))
+                    .header("Content-Type", "multipart/form-data; boundary=" + boundary)
+                    .POST(HttpRequest.BodyPublishers.ofByteArray(requestBody.toByteArray()))
+                    .build();
+
+            // Send request
+            httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+                    .thenApply(response -> {
+                        if (response.statusCode() != 200) {
+                            throw new RuntimeException("Server returned status code: " + response.statusCode());
+                        }
+                        try {
+                            return objectMapper.readTree(response.body());
+                        } catch (Exception e) {
+                            throw new RuntimeException("Error parsing response JSON", e);
+                        }
+                    })
+                    .whenComplete((result, error) -> {
+                        if (error != null) {
+                            future.completeExceptionally(error);
+                        } else {
+                            future.complete(result);
+                        }
+                    });
+
+        } catch (Exception e) {
+            future.completeExceptionally(e);
+        }
 
         return future;
     }

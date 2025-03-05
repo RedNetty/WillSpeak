@@ -1,5 +1,9 @@
 package com.rednetty.willspeak.model;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 import java.io.Serializable;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -9,6 +13,7 @@ import java.util.UUID;
 /**
  * Represents a user profile with speech characteristics and training history.
  */
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class UserProfile implements Serializable {
     private static final long serialVersionUID = 1L;
 
@@ -22,7 +27,7 @@ public class UserProfile implements Serializable {
     private int totalTrainingAudioSeconds;
 
     /**
-     * Create a new user profile.
+     * Create a new user profile with a random UUID.
      *
      * @param name The name of the user
      */
@@ -36,6 +41,49 @@ public class UserProfile implements Serializable {
         this.modelTrained = false;
         this.totalTrainingAudioSeconds = 0;
     }
+
+    /**
+     * Create a new user profile with a specific ID.
+     * This is used when creating a local profile for a server-side profile.
+     *
+     * @param id The ID to use for this profile
+     * @param name The name of the user
+     */
+    public UserProfile(String id, String name) {
+        this.id = id;
+        this.name = name;
+        this.description = "";
+        this.created = LocalDateTime.now();
+        this.lastModified = this.created;
+        this.trainingSessions = new ArrayList<>();
+        this.modelTrained = false;
+        this.totalTrainingAudioSeconds = 0;
+    }
+
+    /**
+     * Constructor for Jackson deserialization.
+     */
+    @JsonCreator
+    public UserProfile(
+            @JsonProperty("id") String id,
+            @JsonProperty("name") String name,
+            @JsonProperty("description") String description,
+            @JsonProperty("created") LocalDateTime created,
+            @JsonProperty("lastModified") LocalDateTime lastModified,
+            @JsonProperty("trainingSessions") List<TrainingSession> trainingSessions,
+            @JsonProperty("modelTrained") boolean modelTrained,
+            @JsonProperty("totalTrainingAudioSeconds") int totalTrainingAudioSeconds) {
+        this.id = id;
+        this.name = name;
+        this.description = description != null ? description : "";
+        this.created = created != null ? created : LocalDateTime.now();
+        this.lastModified = lastModified != null ? lastModified : this.created;
+        this.trainingSessions = trainingSessions != null ? trainingSessions : new ArrayList<>();
+        this.modelTrained = modelTrained;
+        this.totalTrainingAudioSeconds = totalTrainingAudioSeconds;
+    }
+
+    // Rest of the class remains the same
 
     /**
      * Add a new training session to this profile.

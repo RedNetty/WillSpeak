@@ -259,6 +259,28 @@ public class MainController {
     }
 
     /**
+     * Get the last recorded audio data.
+     *
+     * @return The last recorded audio as byte array
+     */
+    public byte[] getLastRecordedAudio() {
+        return lastRecordedAudio;
+    }
+
+    /**
+     * Save the last recorded audio to a file.
+     *
+     * @param filePath The path to save the audio file
+     * @return True if saved successfully, false otherwise
+     */
+    public boolean saveLastRecordedAudio(String filePath) {
+        if (lastRecordedAudio == null || lastRecordedAudio.length == 0) {
+            return false;
+        }
+        return audioCaptureService.saveToWavFile(filePath, lastRecordedAudio);
+    }
+
+    /**
      * Clean up resources on application exit.
      */
     public void shutdown() {

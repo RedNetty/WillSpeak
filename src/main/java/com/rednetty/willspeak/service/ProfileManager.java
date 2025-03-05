@@ -1,5 +1,6 @@
 package com.rednetty.willspeak.service;
 
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule; // Import the JavaTimeModule
 import com.rednetty.willspeak.model.UserProfile;
@@ -40,6 +41,8 @@ public class ProfileManager {
     public ProfileManager(Path profilesDirectory) {
         this.profilesDirectory = profilesDirectory;
         this.objectMapper = new ObjectMapper();
+        // Configure ObjectMapper to be more lenient with unknown properties
+        this.objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
         // Register the JavaTimeModule to support LocalDateTime
         this.objectMapper.registerModule(new JavaTimeModule());
         this.profiles = new ArrayList<>();
@@ -68,11 +71,28 @@ public class ProfileManager {
 
             for (Path profileFile : profileFiles) {
                 try {
-                    UserProfile profile = objectMapper.readValue(profileFile.toFile(), UserProfile.class);
-                    profiles.add(profile);
-                    logger.debug("Loaded profile: {}", profile.getName());
+                    // Check if file is readable and not empty
+                    if (Files.size(profileFile) > 0) {
+                        UserProfile profile = objectMapper.readValue(profileFile.toFile(), UserProfile.class);
+                        if (profile != null && profile.getId() != null && profile.getName() != null) {
+                            profiles.add(profile);
+                            logger.debug("Loaded profile: {}", profile.getName());
+                        } else {
+                            logger.warn("Skipped loading invalid profile from {}", profileFile);
+                        }
+                    } else {
+                        logger.warn("Skipped empty profile file: {}", profileFile);
+                    }
                 } catch (IOException e) {
                     logger.error("Failed to load profile from {}", profileFile, e);
+                    // Consider deleting or renaming corrupted files
+                    try {
+                        Path backupPath = profileFile.resolveSibling(profileFile.getFileName() + ".corrupted");
+                        Files.move(profileFile, backupPath);
+                        logger.info("Renamed corrupted profile file to {}", backupPath);
+                    } catch (IOException moveError) {
+                        logger.error("Failed to rename corrupted profile file", moveError);
+                    }
                 }
             }
 
@@ -175,5 +195,34 @@ public class ProfileManager {
      */
     public void refreshProfiles() {
         loadProfiles();
+    }
+
+    /**
+     * Clean up corrupted profile files.
+     */
+    public void cleanupCorruptedProfiles() {
+        try {
+            List<Path> profileFiles = Files.list(profilesDirectory)
+                    .filter(p -> p.toString().endsWith(".json"))
+                    .collect(Collectors.toList());
+
+            for (Path profileFile : profileFiles) {
+                try {
+                    // Try to read the file to see if it's valid
+                    objectMapper.readValue(profileFile.toFile(), UserProfile.class);
+                } catch (IOException e) {
+                    logger.warn("Found corrupted profile file: {}", profileFile);
+                    try {
+                        Path backupPath = profileFile.resolveSibling(profileFile.getFileName() + ".corrupted");
+                        Files.move(profileFile, backupPath);
+                        logger.info("Renamed corrupted profile file to {}", backupPath);
+                    } catch (IOException moveError) {
+                        logger.error("Failed to rename corrupted profile file", moveError);
+                    }
+                }
+            }
+        } catch (IOException e) {
+            logger.error("Failed to list profile files for cleanup", e);
+        }
     }
 }
