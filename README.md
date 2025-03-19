@@ -1,4 +1,4 @@
-# WillSpeak
+# WillSpeak - W.I.P
     
 A machine learning system to help those with speech impediments communicate clearly.
 
