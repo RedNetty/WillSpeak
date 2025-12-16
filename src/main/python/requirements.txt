@@ -1,0 +1,16 @@
+fastapi>=0.104.1
+uvicorn>=0.23.2
+websockets>=11.0.3
+librosa>=0.10.1
+soundfile>=0.12.1
+numpy>=1.24.3
+scikit-learn>=1.3.1
+scipy>=1.11.3
+tensorflow>=2.14.0
+python-dotenv>=1.0.0
+pydantic>=2.4.2
+loguru>=0.7.2
+# Replaced python-speech-features with SpeechRecognition
+SpeechRecognition>=2.1.3
+# Replaced PyAudio with sounddevice for audio I/O
+sounddevice>=0.4.1
