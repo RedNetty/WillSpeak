@@ -64,3 +64,16 @@ src/main/logs/
 *.pth
 src/main/python/data/
 src/main/python/models/
+
+### Maven archetype boilerplate ###
+src/main/resources/archetype-resources/
+src/main/resources/META-INF/
+
+### Python IDE ###
+src/main/python/.idea/
+
+### Build artifacts ###
+*.class
+*.jar
+!*-sources.jar
+Thumbs.db
